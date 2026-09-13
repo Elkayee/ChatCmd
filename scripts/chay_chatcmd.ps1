@@ -24,9 +24,16 @@ if ($proc) {
     Start-Sleep -Milliseconds 600
 }
 
-# 2. Khoi chay tien trinh moi
+# 2. Khoi chay tien trinh moi (tach biet khoi Job Object bang WMI)
 Write-Host "[*] Dang khoi chay $tep_exe..." -ForegroundColor Yellow
-Start-Process -FilePath $tep_exe -WorkingDirectory $tm_chay
+try {
+    $res = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+        CommandLine = "`"$tep_exe`""
+        CurrentDirectory = $tm_chay
+    }
+} catch {
+    Start-Process -FilePath $tep_exe -WorkingDirectory $tm_chay
+}
 
 # 3. Cho va xac nhan tien trinh khoi tao
 $da_chay = $false

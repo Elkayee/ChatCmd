@@ -60,8 +60,20 @@ async fn main() -> Result<()> {
 
 #[cfg(all(not(debug_assertions), any(target_os = "windows", target_os = "macos")))]
 fn main() -> Result<()> {
+    std::panic::set_hook(Box::new(|info| {
+        let _ = std::fs::write("chatcmd_panic.log", format!("{info:?}"));
+        let _ = std::fs::write("C:\\Tools\\ChatCMD-windows-x64\\chatcmd_panic.log", format!("{info:?}"));
+    }));
     apply_elevated_restart_delay();
-    let port = configured_port()?;
+    let port = match configured_port() {
+        Ok(p) => p,
+        Err(e) => {
+            let err_msg = format!("configured_port failed: {e:#?}");
+            let _ = std::fs::write("chatcmd_startup_error.log", &err_msg);
+            let _ = std::fs::write("C:\\Tools\\ChatCMD-windows-x64\\chatcmd_startup_error.log", &err_msg);
+            return Err(e);
+        }
+    };
     let management_url = format!("http://127.0.0.1:{port}");
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
     std::thread::Builder::new()
@@ -71,12 +83,21 @@ fn main() -> Result<()> {
                 .enable_all()
                 .build()
                 .expect("create ChatCMD Tokio runtime");
-            if runtime.block_on(run_server(Some(ready_tx))).is_err() {
+            if let Err(e) = runtime.block_on(run_server(Some(ready_tx))) {
+                let err_msg = format!("run_server failed: {e:#?}");
+                let _ = std::fs::write("chatcmd_startup_error.log", &err_msg);
+                let _ = std::fs::write("C:\\Tools\\ChatCMD-windows-x64\\chatcmd_startup_error.log", &err_msg);
                 std::process::exit(1);
             }
         })
         .context("start ChatCMD server thread")?;
-    desktop_tray::run(management_url, ready_rx)
+    if let Err(e) = desktop_tray::run(management_url, ready_rx) {
+        let err_msg = format!("desktop_tray::run failed: {e:#?}");
+        let _ = std::fs::write("chatcmd_startup_error.log", &err_msg);
+        let _ = std::fs::write("C:\\Tools\\ChatCMD-windows-x64\\chatcmd_startup_error.log", &err_msg);
+        return Err(e);
+    }
+    Ok(())
 }
 
 #[cfg(all(
