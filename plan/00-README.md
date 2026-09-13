@@ -56,6 +56,7 @@ Project áp dụng:
 
 22. [20-large-repo-index-and-batch-tools.md](20-large-repo-index-and-batch-tools.md)
 23. [23-adversarial-tests-and-benchmarks.md](23-adversarial-tests-and-benchmarks.md)
+24. [24-subagent-fallback-and-windows-compatibility-fixes.md](24-subagent-fallback-and-windows-compatibility-fixes.md)
 
 ## Quan hệ phụ thuộc chính
 

@@ -286,6 +286,11 @@ tool_methods!(
         "After agent_user_message, discover available .agents and .codex skills before non-trivial project work; no tool-specific fields."
     ),
     (
+        skills_search,
+        SkillsSearchArgs,
+        "Search bounded skill metadata before non-trivial project work. Optional fields: query and limit (default 5, capped). Results never include full SKILL.md instructions."
+    ),
+    (
         skill_read,
         SkillArgs,
         "Read a relevant matching skill. Required field: skillId; id is accepted as a compatibility alias."

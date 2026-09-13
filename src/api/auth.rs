@@ -177,41 +177,45 @@ pub(super) async fn require_gui_auth(
 }
 
 fn extension_route_allowed(method: &Method, path: &str) -> bool {
-    let parts = path.trim_matches('/').split('/').collect::<Vec<_>>();
+    let mut parts = path.trim_matches('/').split('/').collect::<Vec<_>>();
+    if parts.starts_with(&["api", "local"]) {
+        parts.drain(0..2);
+    } else if parts.first() == Some(&"api") || parts.first() == Some(&"local") {
+        parts.remove(0);
+    }
     match (method, parts.as_slice()) {
-        (&Method::GET | &Method::POST, ["api", "local", "tasks", _, "chatgpt", "compact"])
-        | (&Method::GET, ["api", "local", "chatgpt", "compact", _])
+        (&Method::GET | &Method::POST, ["tasks", _, "chatgpt", "compact"])
+        | (&Method::GET, ["chatgpt", "compact", _])
         | (
             &Method::POST,
             [
-                "api",
-                "local",
                 "chatgpt",
                 "compact",
                 _,
                 "checkpoint" | "resume",
             ],
         ) => true,
-        (&Method::GET, ["api", "local", "chatgpt", "capture", "capabilities"])
-        | (&Method::POST, ["api", "local", "chatgpt", "capture", "turns"]) => true,
-        (&Method::GET, ["api", "local", "chatgpt", "requests", _]) => true,
-        (&Method::POST, ["api", "local", "subagents", _, "fallback", action]) => {
+        (&Method::GET, ["chatgpt", "capture", "capabilities"])
+        | (&Method::POST, ["chatgpt", "capture", "turns"]) => true,
+        (&Method::GET, ["chatgpt", "requests", _]) => true,
+        (&Method::GET, ["subagents", "fallback", "pending"]) => true,
+        (&Method::POST, ["subagents", _, "fallback", action]) => {
             matches!(*action, "started" | "result" | "heartbeat")
         }
-        (&Method::POST, ["api", "local", "chatgpt", "bridge", _, action]) => {
+        (&Method::POST, ["chatgpt", "bridge", _, action]) => {
             matches!(
                 *action,
                 "started" | "identity" | "result" | "browser-completed" | "observation"
             )
         }
-        (&Method::GET, ["api", "local", "tasks", "approvals", "pending"])
-        | (&Method::GET, ["api", "local", "tasks", "activity-approvals", "pending"])
-        | (&Method::GET, ["api", "local", "plan", "questions", "pending"]) => true,
-        (&Method::POST, ["api", "local", "tasks", _, action]) => {
+        (&Method::GET, ["tasks", "approvals", "pending"])
+        | (&Method::GET, ["tasks", "activity-approvals", "pending"])
+        | (&Method::GET, ["plan", "questions", "pending"]) => true,
+        (&Method::POST, ["tasks", _, action]) => {
             matches!(*action, "approve-execution" | "reject-execution")
         }
-        (&Method::POST, ["api", "local", "tasks", _, "activities", _, "approval"])
-        | (&Method::POST, ["api", "local", "plan", "questions", _, "answer"]) => true,
+        (&Method::POST, ["tasks", _, "activities", _, "approval"])
+        | (&Method::POST, ["plan", "questions", _, "answer"]) => true,
         _ => false,
     }
 }

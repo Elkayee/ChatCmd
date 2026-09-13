@@ -291,6 +291,22 @@ pub(super) fn valid_skill_name(name: &str) -> bool {
         && !name.contains("--")
 }
 
+pub(super) fn is_yaml_block_scalar(value: &str) -> bool {
+    let s = value.trim();
+    let s = s.split('#').next().unwrap_or("").trim();
+    if let Some(rest) = s.strip_prefix('>') {
+        is_valid_block_modifier(rest)
+    } else if let Some(rest) = s.strip_prefix('|') {
+        is_valid_block_modifier(rest)
+    } else {
+        false
+    }
+}
+
+fn is_valid_block_modifier(rest: &str) -> bool {
+    rest.chars().all(|c| c.is_ascii_digit() || c == '-' || c == '+')
+}
+
 pub(super) fn parse_frontmatter(content: &str) -> BTreeMap<String, String> {
     let mut values = BTreeMap::new();
     let mut lines = content.lines();
@@ -313,6 +329,8 @@ pub(super) fn parse_frontmatter(content: &str) -> BTreeMap<String, String> {
                 }
                 buffer.push_str(line.trim());
                 continue;
+            } else if line.trim().is_empty() {
+                continue;
             }
             values.insert(key, buffer.trim().into());
             multiline = None;
@@ -321,7 +339,7 @@ pub(super) fn parse_frontmatter(content: &str) -> BTreeMap<String, String> {
         if let Some((key, value)) = line.split_once(':') {
             let key = key.trim().to_owned();
             let value = value.trim();
-            if value == ">" || value == "|" {
+            if is_yaml_block_scalar(value) {
                 multiline = Some(key);
             } else {
                 values.insert(key, value.trim_matches(['"', '\'']).into());
@@ -426,6 +444,39 @@ mod tests {
             files
                 .iter()
                 .all(|path| !path.starts_with(temp.path().join(".git")))
+        );
+    }
+
+    #[test]
+    fn parse_frontmatter_handles_yaml_block_chomping_and_multiline() {
+        let content = r#"---
+name: orchestration
+description: >-
+  Provides multi-agent routing and coordination.
+
+  Supports dynamic delegation.
+title: Orchestration Skill
+---
+"#;
+        let map = parse_frontmatter(content);
+        assert_eq!(map.get("name").map(String::as_str), Some("orchestration"));
+        assert_eq!(
+            map.get("description").map(String::as_str),
+            Some("Provides multi-agent routing and coordination. Supports dynamic delegation.")
+        );
+        assert_eq!(map.get("title").map(String::as_str), Some("Orchestration Skill"));
+
+        let literal = r#"---
+name: literal-skill
+description: |-
+  First line
+  Second line
+---
+"#;
+        let map_lit = parse_frontmatter(literal);
+        assert_eq!(
+            map_lit.get("description").map(String::as_str),
+            Some("First line Second line")
         );
     }
 }

@@ -266,6 +266,7 @@ async fn extension_approval_and_subagent_routes_survive_nesting() {
         "/api/local/tasks/approvals/pending",
         "/api/local/tasks/activity-approvals/pending",
         "/api/local/plan/questions/pending",
+        "/api/local/subagents/fallback/pending",
     ] {
         let response = extension_request(&app, "GET", path, Value::Null).await;
         expect_json(response, StatusCode::OK).await;

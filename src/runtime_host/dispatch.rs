@@ -41,7 +41,7 @@ impl RuntimeHost {
             || tool == "command_run"
             || tool == "workspace_roots"
             || tool == "project_context"
-            || matches!(tool, "skills_list" | "skill_read")
+            || matches!(tool, "skills_list" | "skills_search" | "skill_read")
         {
             <Self as chatcmd_mcp::RuntimeApi>::project_folder(self, context.task_id.as_deref())
                 .await?
@@ -389,6 +389,18 @@ impl RuntimeHost {
                     .list_for_workspace(project_folder.as_deref())
                     .await?,
             ),
+            "skills_search" => {
+                let input: SkillsSearchInput = parse(arguments)?;
+                value(
+                    self.skills
+                        .search_for_workspace(
+                            input.query.as_deref(),
+                            input.limit,
+                            project_folder.as_deref(),
+                        )
+                        .await?,
+                )
+            }
             "skill_read" => {
                 let input: SkillInput = parse(arguments)?;
                 value(

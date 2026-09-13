@@ -40,6 +40,12 @@ tool_args!(SkillArgs {
     #[serde(alias = "id")]
     skill_id: String
 });
+tool_args!(SkillsSearchArgs {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    query: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    limit: Option<usize>
+});
 tool_args!(ProcessArgs { process_id: u32 });
 tool_args!(ArtifactArgs {
     artifact_id: String,

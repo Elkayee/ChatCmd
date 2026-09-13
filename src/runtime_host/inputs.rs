@@ -41,6 +41,12 @@ input!(SkillInput {
     #[serde(alias = "id")]
     skill_id: String
 });
+input!(SkillsSearchInput {
+    #[serde(default)]
+    query: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>
+});
 input!(ProcessInput { process_id: u32 });
 input!(ArtifactInput {
     artifact_id: String,

@@ -12,6 +12,8 @@ mod support;
 use support::*;
 
 const MAX_SKILL_BYTES: u64 = 2_000_000;
+const DEFAULT_SEARCH_LIMIT: usize = 5;
+const MAX_SEARCH_LIMIT: usize = 20;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -159,6 +161,55 @@ impl SkillService {
     ) -> RuntimeResult<Vec<SkillSummary>> {
         let roots = self.roots_for_workspace(repository_root);
         self.list_from_roots(&roots)
+    }
+
+    /// Search the same discovered skill metadata used by `list`, without reading
+    /// instruction bodies into the result.
+    pub async fn search_for_workspace(
+        &self,
+        query: Option<&str>,
+        limit: Option<usize>,
+        repository_root: Option<&Path>,
+    ) -> RuntimeResult<Vec<SkillSummary>> {
+        let query = query.unwrap_or_default().trim().to_ascii_lowercase();
+        let query_tokens: Vec<_> = query
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .filter(|token| !token.is_empty())
+            .collect();
+        let limit = limit
+            .unwrap_or(DEFAULT_SEARCH_LIMIT)
+            .clamp(1, MAX_SEARCH_LIMIT);
+        let mut seen = HashSet::new();
+        let mut matches: Vec<_> = self
+            .discover_from_roots(&self.roots_for_workspace(repository_root))?
+            .into_iter()
+            .filter(|skill| skill.enabled && seen.insert(skill.name.to_ascii_lowercase()))
+            .filter_map(|skill| {
+                let score = skill_search_score(&skill, &query, &query_tokens);
+                (score > 0 || query.is_empty()).then_some((score, skill))
+            })
+            .collect();
+        matches.sort_by(|(left_score, left), (right_score, right)| {
+            right_score
+                .cmp(left_score)
+                .then_with(|| {
+                    left.name
+                        .to_ascii_lowercase()
+                        .cmp(&right.name.to_ascii_lowercase())
+                })
+                .then_with(|| left.directory.cmp(&right.directory))
+        });
+        Ok(matches
+            .into_iter()
+            .take(limit)
+            .map(|(_, skill)| SkillSummary {
+                id: skill.name.clone(),
+                name: skill.name,
+                title: skill.title,
+                description: skill.description,
+                source: skill.directory.to_string_lossy().into_owned(),
+            })
+            .collect())
     }
 
     pub async fn read(&self, skill_id: &str) -> RuntimeResult<SkillReadResult> {
@@ -641,6 +692,40 @@ impl SkillService {
     }
 }
 
+fn skill_search_score(skill: &DiscoveredSkill, query: &str, tokens: &[&str]) -> u8 {
+    if query.is_empty() {
+        return 1;
+    }
+    let id = skill.id.to_ascii_lowercase();
+    let name = skill.name.to_ascii_lowercase();
+    let title = skill.title.to_ascii_lowercase();
+    if id == query || name == query {
+        return 4;
+    }
+    if id.starts_with(query) || name.starts_with(query) || title.starts_with(query) {
+        return 3;
+    }
+    let searchable = format!(
+        "{id} {name} {title} {}",
+        skill.description.to_ascii_lowercase()
+    );
+    let matched = tokens
+        .iter()
+        .filter(|token| {
+            searchable
+                .split(|character: char| !character.is_ascii_alphanumeric())
+                .any(|value| value.starts_with(**token))
+        })
+        .count();
+    if matched == tokens.len() && matched > 0 {
+        2
+    } else if matched > 0 {
+        1
+    } else {
+        0
+    }
+}
+
 async fn clone_repository(source: &GitHubSource) -> RuntimeResult<tempfile::TempDir> {
     let checkout = tempfile::Builder::new()
         .prefix("chatcmd-skill-")
@@ -971,6 +1056,38 @@ mod tests {
             from_b
                 .source
                 .starts_with(project_b.to_string_lossy().as_ref())
+        );
+    }
+
+    #[tokio::test]
+    async fn skill_search_is_bounded_and_deterministic() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repository = temp.path().join("repository");
+        for index in 0..105 {
+            write_skill(&repository, &format!("skill-{index:03}"), "metadata only");
+        }
+        write_skill(&repository, "rust-skills", "Rust implementation and review");
+
+        let service = SkillService::new(None, Some(&repository), 10_000);
+        let bounded = service
+            .search_for_workspace(None, Some(5), Some(&repository))
+            .await
+            .expect("bounded skill search");
+        assert_eq!(bounded.len(), 5);
+        let exact = service
+            .search_for_workspace(Some("rust-skills"), Some(5), Some(&repository))
+            .await
+            .expect("exact skill search");
+        assert_eq!(
+            exact.first().map(|skill| skill.id.as_str()),
+            Some("rust-skills")
+        );
+        assert!(
+            service
+                .search_for_workspace(Some("does-not-exist"), None, Some(&repository))
+                .await
+                .expect("no-match skill search")
+                .is_empty()
         );
     }
 }

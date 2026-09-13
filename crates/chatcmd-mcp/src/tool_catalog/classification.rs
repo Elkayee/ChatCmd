@@ -14,7 +14,7 @@ fn operation_class(name: &str) -> ToolOperationClass {
         | "blob_status" => ToolOperationClass::MetadataRead,
         "fs_list" | "fs_list_v2" | "fs_stat" | "fs_batch_stat" | "fs_read_text"
         | "fs_read_text_v2" | "fs_batch_read" | "fs_find" | "fs_search" | "task_artifact_read"
-        | "skill_read" | "skills_list" | "project_context" => ToolOperationClass::ContentRead,
+        | "skill_read" | "skills_list" | "skills_search" | "project_context" => ToolOperationClass::ContentRead,
         "fs_create_directory"
         | "fs_write_text"
         | "fs_write_raw"
@@ -72,7 +72,7 @@ fn risk_class(name: &str) -> ToolRiskClass {
         | "blob_status" => ToolRiskClass::MetadataRead,
         "fs_read_text" | "fs_read_text_v2" | "fs_batch_read" | "task_artifact_read"
         | "skill_read" | "shell_read" => ToolRiskClass::ContentRead,
-        "fs_find" | "fs_search" | "skills_list" | "project_context" => ToolRiskClass::ComputeRead,
+        "fs_find" | "fs_search" | "skills_list" | "skills_search" | "project_context" => ToolRiskClass::ComputeRead,
         "fs_create_directory" | "blob_begin" | "blob_write_chunk" | "blob_seal" => {
             ToolRiskClass::Create
         }
