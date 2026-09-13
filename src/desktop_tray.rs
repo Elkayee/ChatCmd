@@ -72,7 +72,8 @@ struct TrayApplication {
 }
 
 impl ApplicationHandler<UserEvent> for TrayApplication {
-    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
         if self.tray.is_none()
             && let Ok(tray) = build_tray(&self.open_item, &self.quit_item)
         {

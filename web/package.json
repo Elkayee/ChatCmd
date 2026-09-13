@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "license": "MIT",
-  "repository": "https://github.com/int04/ChatCmd",
+  "repository": "https://github.com/Elkayee/ChatCmd",
   "type": "module",
   "scripts": {
     "dev": "vite",
