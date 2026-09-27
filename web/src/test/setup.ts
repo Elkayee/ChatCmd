@@ -17,6 +17,7 @@ Object.defineProperty(window, 'localStorage', { configurable: true, value: testS
 afterEach(() => { cleanup(); storageState.clear(); vi.useRealTimers(); });
 Object.defineProperty(window, 'matchMedia', { writable: true, value: vi.fn().mockImplementation(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })) });
 Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
+Object.defineProperty(Element.prototype, 'scrollTo', { configurable: true, value: vi.fn() });
 
 export class FakeSocket {
   static instances: FakeSocket[] = [];

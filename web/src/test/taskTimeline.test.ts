@@ -187,6 +187,19 @@ describe('running tool stop projection', () => {
     expect(blocks[0]).toMatchObject({ type: 'activities', activities: [{ id: 'activity-1', status: 'stopped', error: 'the user stopped this activity. Reason: Đổi cách làm' }] });
   });
 
+  it('keeps a terminal result authoritative when persisted events have tied timestamps', () => {
+    const failed: TimelineEvent = {
+      id: 'aaa-result', type: 'tool_result', occurredAt: started.occurredAt,
+      taskId: 'task-1', turnId: 'turn-1', payload: { activityId: 'activity-1', tool: 'git_diff', status: 'failed', errorCode: 'io_error' },
+    };
+    const blocks = buildProcessBlocks([failed, started]);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: 'activities',
+      activities: [{ id: 'activity-1', status: 'failed', input: { cwd: '.' }, errorCode: 'io_error' }],
+    });
+  });
+
   it('interrupts an orphaned running activity when the turn has already completed', () => {
     const completed: TimelineEvent = {
       id: 'turn-completed', type: 'status', occurredAt: '2026-08-27T08:00:03.000Z',

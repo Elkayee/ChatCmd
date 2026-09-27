@@ -168,7 +168,7 @@ flowchart LR
 - [Rust](https://www.rust-lang.org/tools/install) **1.85 trở lên** cùng Cargo.
 - [Node.js](https://nodejs.org/) **20.19 trở lên**, hoặc **22.12 trở lên**, và npm (khớp với Vite engine requirement đã được commit).
 - [Git](https://git-scm.com/).
-- Shell cục bộ được hỗ trợ: PowerShell hoặc `cmd.exe` trên Windows; `bash` hoặc `zsh` trên macOS/Linux.
+- Shell cục bộ được hỗ trợ: PowerShell, `cmd.exe` hoặc Git Bash trên Windows; `bash` hoặc `zsh` trên macOS/Linux.
 - Build tool theo nền tảng:
   - Windows: Visual Studio Build Tools với MSVC C++ workload.
   - macOS: Xcode Command Line Tools.

@@ -65,7 +65,10 @@ async fn main() -> Result<()> {
 fn main() -> Result<()> {
     std::panic::set_hook(Box::new(|info| {
         let _ = std::fs::write("chatcmd_panic.log", format!("{info:?}"));
-        let _ = std::fs::write("C:\\Tools\\ChatCMD-windows-x64\\chatcmd_panic.log", format!("{info:?}"));
+        let _ = std::fs::write(
+            "C:\\Tools\\ChatCMD-windows-x64\\chatcmd_panic.log",
+            format!("{info:?}"),
+        );
     }));
     apply_elevated_restart_delay();
     let port = match configured_port() {
@@ -73,7 +76,10 @@ fn main() -> Result<()> {
         Err(e) => {
             let err_msg = format!("configured_port failed: {e:#?}");
             let _ = std::fs::write("chatcmd_startup_error.log", &err_msg);
-            let _ = std::fs::write("C:\\Tools\\ChatCMD-windows-x64\\chatcmd_startup_error.log", &err_msg);
+            let _ = std::fs::write(
+                "C:\\Tools\\ChatCMD-windows-x64\\chatcmd_startup_error.log",
+                &err_msg,
+            );
             return Err(e);
         }
     };
@@ -89,7 +95,10 @@ fn main() -> Result<()> {
             if let Err(e) = runtime.block_on(run_server(Some(ready_tx))) {
                 let err_msg = format!("run_server failed: {e:#?}");
                 let _ = std::fs::write("chatcmd_startup_error.log", &err_msg);
-                let _ = std::fs::write("C:\\Tools\\ChatCMD-windows-x64\\chatcmd_startup_error.log", &err_msg);
+                let _ = std::fs::write(
+                    "C:\\Tools\\ChatCMD-windows-x64\\chatcmd_startup_error.log",
+                    &err_msg,
+                );
                 std::process::exit(1);
             }
         })
@@ -97,7 +106,10 @@ fn main() -> Result<()> {
     if let Err(e) = desktop_tray::run(management_url, ready_rx) {
         let err_msg = format!("desktop_tray::run failed: {e:#?}");
         let _ = std::fs::write("chatcmd_startup_error.log", &err_msg);
-        let _ = std::fs::write("C:\\Tools\\ChatCMD-windows-x64\\chatcmd_startup_error.log", &err_msg);
+        let _ = std::fs::write(
+            "C:\\Tools\\ChatCMD-windows-x64\\chatcmd_startup_error.log",
+            &err_msg,
+        );
         return Err(e);
     }
     Ok(())
@@ -268,6 +280,16 @@ async fn run_server(ready: Option<std::sync::mpsc::Sender<()>>) -> Result<()> {
         info!(
             expired_plan_questions,
             "Expired pending plan questions after restart"
+        );
+    }
+    let reconciled_tool_calls = runtime
+        .reconcile_orphaned_tool_calls_after_restart()
+        .await
+        .context("reconcile tool calls interrupted by the previous host session")?;
+    if reconciled_tool_calls > 0 {
+        info!(
+            reconciled_tool_calls,
+            "Reconciled tool calls interrupted by restart"
         );
     }
     runtime

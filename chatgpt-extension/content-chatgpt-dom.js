@@ -84,12 +84,14 @@
 
   function findSendButton(composer) {
     const selectors = [
+      'button#composer-submit-button',
       'button[data-testid="send-button"]',
       'button[aria-label="Send prompt"]',
       'button[aria-label="Send message"]',
       'button[aria-label="Send"]',
       'button[aria-label="Gửi"]',
       'button[aria-label="Gửi tin nhắn"]',
+      'button[aria-label="Gửi lời nhắc"]',
       'button[title="Send"]',
       'button[title="Gửi"]',
     ];

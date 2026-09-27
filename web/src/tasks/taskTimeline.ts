@@ -68,8 +68,10 @@ export function buildProcessBlocks(events: TimelineEvent[]): ProcessBlock[] {
       const activityId = stringValue(payload.activityId) || event.id;
       const existing = pending.get(activityId);
       if (existing) {
-        existing.status = stringValue(payload.status) || existing.status;
+        if (!existing.finishedAt) existing.status = stringValue(payload.status) || existing.status;
+        else existing.startedAt = event.occurredAt;
         if (payload.input !== undefined) existing.input = payload.input;
+        existing.turnId ??= event.turnId;
         const stopReason = stringValue(payload.stopReason);
         if (stopReason) existing.error = tr('Stop reason: {reason}', { reason: stopReason });
         continue;
@@ -114,7 +116,7 @@ export function buildProcessBlocks(events: TimelineEvent[]): ProcessBlock[] {
         if (!blocks.length || blocks.at(-1)?.type !== 'activities') {
           blocks.push({ type: 'activities', key: `tools-${event.id}`, activities: currentActivities });
         }
-        currentActivities.push({
+        const completed: ToolActivity = {
           id: id || event.id,
           tool,
           kind: toolKind(tool),
@@ -126,7 +128,11 @@ export function buildProcessBlocks(events: TimelineEvent[]): ProcessBlock[] {
           error: stringValue(payload.errorMessage) || stringValue(payload.errorCode),
           startedAt: event.occurredAt,
           finishedAt: event.occurredAt,
-        });
+        };
+        currentActivities.push(completed);
+        pending.set(completed.id, completed);
+        queue.push(completed);
+        pendingByTool.set(tool, queue);
       }
       continue;
     }

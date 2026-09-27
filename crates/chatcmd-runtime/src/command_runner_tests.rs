@@ -159,9 +159,23 @@ async fn spawn_failure_and_output_flood_remain_bounded() {
         .await
         .expect("flood result");
     assert_eq!(flood.exit_code, Some(0));
+    assert_eq!(flood.terminal_state, CommandTerminalState::Exited);
     assert!(flood.truncated);
     assert!(flood.stdout.len() <= 1024);
+    assert!(flood.stdout_bytes > 1024);
+    assert!(flood.artifact_ref.is_some());
     assert!(flood.artifact_bytes <= 4096);
+}
+
+#[test]
+fn command_output_defaults_are_concise() {
+    let request: CommandRunRequest = serde_json::from_value(serde_json::json!({
+        "executable": "echo",
+        "cwd": "."
+    }))
+    .expect("default command request");
+    assert_eq!(request.max_stdout_bytes, 16 * 1024);
+    assert_eq!(request.max_stderr_bytes, 8 * 1024);
 }
 
 #[tokio::test]

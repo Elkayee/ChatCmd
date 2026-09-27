@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn fs_list_v2_advertises_versioned_result_schema_without_changing_legacy_input() {
+fn fs_list_contracts_advertise_legacy_timeout_and_v2_result_schema() {
     let manifest = canonical_manifest();
     let tools = manifest["tools"].as_array().expect("manifest tools");
     let legacy = tools
@@ -14,6 +14,7 @@ fn fs_list_v2_advertises_versioned_result_schema_without_changing_legacy_input()
         .expect("fs_list_v2");
 
     assert!(legacy["schema"]["properties"].get("offset").is_some());
+    assert!(legacy["schema"]["properties"].get("timeoutMs").is_some());
     assert!(legacy["schema"]["properties"].get("cursor").is_none());
     assert!(!legacy["resultSchema"].is_null());
     assert_eq!(legacy["capabilities"]["resultSchemaVersion"], Value::Null);

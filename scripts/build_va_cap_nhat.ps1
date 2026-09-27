@@ -14,20 +14,22 @@ Write-Host "================================================================" -F
 Write-Host "     CHATCMD - BIEN DICH VA CAP NHAT RELEASE EXECUTABLE         " -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 
-# 1. Kiem tra thu muc web/dist
+# 1. Kiem thu va build frontend de embedded-web khong bao gio dung bundle cu
 $tep_web = Join-Path $tm_goc "web\dist\index.html"
-if (-not (Test-Path $tep_web)) {
-    Write-Host "[*] Web dist chua co san. Dang build frontend web..." -ForegroundColor Yellow
-    Push-Location (Join-Path $tm_goc "web")
-    try {
-        npm run build
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "[FAIL] Build web frontend that bai!" -ForegroundColor Red
-            exit 1
-        }
-    } finally {
-        Pop-Location
+Push-Location (Join-Path $tm_goc "web")
+try {
+    npm test -- --run
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[FAIL] Kiem thu web frontend that bai!" -ForegroundColor Red
+        exit 1
     }
+    npm run build
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[FAIL] Build web frontend that bai!" -ForegroundColor Red
+        exit 1
+    }
+} finally {
+    Pop-Location
 }
 Write-Host "[PASS] 1. Frontend web/dist san sang." -ForegroundColor Green
 
@@ -51,13 +53,31 @@ $proc = Get-Process -Name ChatCMD -ErrorAction SilentlyContinue
 if ($proc) {
     Write-Host "[*] 3. Dang dung tien trinh ChatCMD cu (PID: $($proc.Id))..." -ForegroundColor Yellow
     $proc | Stop-Process -Force
-    Start-Sleep -Milliseconds 500
+    $proc | Wait-Process -Timeout 15 -ErrorAction Stop
 }
 Write-Host "[PASS] 3. Da giai phong tien trinh." -ForegroundColor Green
 
 # 4. Sao chep binary sang thu muc dich C:\Tools\ChatCMD-windows-x64\ChatCMD.exe
 try {
-    Copy-Item -Path $tep_nguon -Destination $tep_dich -Force
+    for ($lan = 1; $lan -le 5; $lan++) {
+        try {
+            Copy-Item -Path $tep_nguon -Destination $tep_dich -Force -ErrorAction Stop
+            break
+        } catch [System.IO.IOException] {
+            if ($lan -eq 5) { throw }
+            Start-Sleep -Seconds 1
+        }
+    }
+    $thu_muc_extension_dich = Join-Path (Split-Path -Parent $tep_dich) 'chatgpt-extension'
+    New-Item -ItemType Directory -Path $thu_muc_extension_dich -Force | Out-Null
+    Copy-Item -Path (Join-Path $tm_goc 'chatgpt-extension\*') -Destination $thu_muc_extension_dich -Recurse -Force
+    Copy-Item -Path (Join-Path $tm_goc 'openai-tunnel.bat') -Destination (Split-Path -Parent $tep_dich) -Force
+    Copy-Item -Path (Join-Path $tm_goc 'openai-tunnel') -Destination (Split-Path -Parent $tep_dich) -Recurse -Force
+    $hash_nguon = (Get-FileHash -LiteralPath $tep_nguon -Algorithm SHA256).Hash
+    $hash_dich = (Get-FileHash -LiteralPath $tep_dich -Algorithm SHA256).Hash
+    if ($hash_nguon -ne $hash_dich) {
+        throw "SHA-256 cua release binary khong khop sau khi sao chep."
+    }
     $thong_tin_dich = Get-Item $tep_dich
     $mb_dich = [math]::Round($thong_tin_dich.Length / 1MB, 2)
     $thoi_diem = $thong_tin_dich.LastWriteTime.ToString("HH:mm:ss dd/MM/yyyy")

@@ -57,9 +57,9 @@ mod tests {
             .map(|suffix| format!("COD-{suffix}"))
             .collect::<Vec<_>>();
         let unique = ids.iter().cloned().collect::<HashSet<_>>();
-        assert_eq!(ids.len(), 16);
-        assert_eq!(unique.len(), 16);
-        for number in 1..=16 {
+        assert_eq!(ids.len(), 17);
+        assert_eq!(unique.len(), 17);
+        for number in 1..=17 {
             assert!(unique.contains(&format!("COD-{number:02}")));
         }
     }
@@ -68,7 +68,7 @@ mod tests {
     fn parent_and_child_share_identical_core_identity() {
         let parent = parent_bundle("protocol", "workspace");
         let child = child_core();
-        for marker in [INSTRUCTIONS_VERSION, core_hash(), "COD-01", "COD-16"] {
+        for marker in [INSTRUCTIONS_VERSION, core_hash(), "COD-01", "COD-17"] {
             assert!(parent.contains(marker));
             assert!(child.contains(marker));
         }
@@ -93,7 +93,16 @@ mod tests {
         for bundle in [initialize, text_child, tool_child] {
             assert!(bundle.contains(INSTRUCTIONS_VERSION));
             assert!(bundle.contains(core_hash()));
-            assert!(bundle.contains("COD-01") && bundle.contains("COD-16"));
+            assert!(bundle.contains("COD-01") && bundle.contains("COD-17"));
+        }
+    }
+
+    #[test]
+    fn parent_and_child_require_always_on_skills() {
+        for bundle in [parent_bundle("protocol", "workspace"), child_core()] {
+            assert!(bundle.contains("COD-17 ALWAYS-ON SKILLS"));
+            assert!(bundle.contains("humanizer and find-skills"));
+            assert!(bundle.contains("mandatory whether or not request keywords match"));
         }
     }
 }

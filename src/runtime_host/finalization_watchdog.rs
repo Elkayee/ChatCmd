@@ -23,6 +23,9 @@ impl RuntimeHost {
             let mut interval =
                 tokio::time::interval(Duration::from_secs(WATCHDOG_INTERVAL_SECONDS));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            if let Err(error) = host.reconcile_completed_bridge_requests().await {
+                warn!(code = %error.code, message = %error.message, "bridge request startup reconciliation failed");
+            }
             loop {
                 interval.tick().await;
                 if let Err(error) = host.expire_stale_subagents(None).await {
@@ -141,6 +144,26 @@ impl RuntimeHost {
         .execute(&mut *tx)
         .await
         .map_err(watchdog_storage_error)?;
+        sqlx::query(
+            "UPDATE chatgpt_conversations SET active_request_id=NULL,updated_at_ms=? WHERE task_id=? AND active_request_id IN (SELECT id FROM chatgpt_bridge_requests WHERE task_id=? AND turn_id=? AND status IN ('queued','running','stop_requested'))",
+        )
+        .bind(now)
+        .bind(task_id)
+        .bind(task_id)
+        .bind(turn_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(watchdog_storage_error)?;
+        sqlx::query(
+            "UPDATE chatgpt_bridge_requests SET status='completed',updated_at_ms=?,completed_at_ms=COALESCE(completed_at_ms,?) WHERE task_id=? AND turn_id=? AND status IN ('queued','running','stop_requested')",
+        )
+        .bind(now)
+        .bind(now)
+        .bind(task_id)
+        .bind(turn_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(watchdog_storage_error)?;
         tx.commit().await.map_err(watchdog_storage_error)?;
 
         if let Err(error) = self
@@ -162,6 +185,23 @@ impl RuntimeHost {
             Some(turn_id.to_owned()),
             payload,
         );
+        Ok(())
+    }
+
+    async fn reconcile_completed_bridge_requests(&self) -> RuntimeResult<()> {
+        let now = now_ms();
+        let eligible = "SELECT r.id FROM chatgpt_bridge_requests r JOIN tasks t ON t.id=r.task_id WHERE r.status IN ('queued','running','stop_requested') AND t.status='completed' AND EXISTS(SELECT 1 FROM timeline_events e WHERE e.task_id=r.task_id AND e.turn_id=r.turn_id AND e.actor='assistant' AND e.kind='status' AND json_extract(e.payload_json,'$.status')='completed' AND e.created_at_ms>=r.created_at_ms)";
+        let mut tx = self
+            .repository
+            .pool()
+            .begin()
+            .await
+            .map_err(watchdog_storage_error)?;
+        sqlx::query(&format!("UPDATE chatgpt_conversations SET active_request_id=NULL,updated_at_ms=? WHERE active_request_id IN ({eligible})"))
+            .bind(now).execute(&mut *tx).await.map_err(watchdog_storage_error)?;
+        sqlx::query(&format!("UPDATE chatgpt_bridge_requests SET status='completed',updated_at_ms=?,completed_at_ms=COALESCE(completed_at_ms,?) WHERE id IN ({eligible})"))
+            .bind(now).bind(now).execute(&mut *tx).await.map_err(watchdog_storage_error)?;
+        tx.commit().await.map_err(watchdog_storage_error)?;
         Ok(())
     }
 }
@@ -188,10 +228,90 @@ fn watchdog_storage_error(_: sqlx::Error) -> RuntimeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime_host::user_message_tests;
+    use serde_json::json;
 
     #[test]
     fn default_grace_is_safe_for_slow_final_responses() {
         assert_eq!(DEFAULT_FINALIZATION_GRACE_SECONDS, 120);
         const { assert!(DEFAULT_FINALIZATION_GRACE_SECONDS >= MIN_FINALIZATION_GRACE_SECONDS) };
+    }
+
+    #[tokio::test]
+    async fn watchdog_completes_bridge_request_with_task() {
+        let (host, agent_id, _directory) = user_message_tests::test_host().await;
+        let accepted = host
+            .call_persisted(
+                "agent_user_message",
+                user_message_tests::turn_context(
+                    "watchdog-user",
+                    &agent_id,
+                    "agent_user_message",
+                    "watchdog-turn",
+                    "watchdog-scope",
+                ),
+                json!({"content":"Finish this turn"}),
+            )
+            .await
+            .expect("start turn");
+        let task_id = accepted["taskId"].as_str().expect("task ID");
+        let turn_id = accepted["turnId"].as_str().expect("turn ID");
+        let now = now_ms();
+        sqlx::query("INSERT INTO chatgpt_bridge_requests(id,task_id,turn_id,agent_id,model,user_content,submitted_content,status,created_at_ms,updated_at_ms) VALUES('watchdog-request',?,?,?,'Auto','prompt','prompt','running',?,?)")
+            .bind(task_id).bind(turn_id).bind(&agent_id).bind(now - 1000).bind(now - 1000)
+            .execute(host.repository.pool()).await.expect("bridge request");
+        sqlx::query("INSERT INTO chatgpt_conversations(task_id,conversation_id,conversation_url,model,active_request_id,created_at_ms,updated_at_ms) VALUES(?,'watchdog-conversation','https://chatgpt.com/c/watchdog','Auto','watchdog-request',?,?)")
+            .bind(task_id).bind(now - 1000).bind(now - 1000)
+            .execute(host.repository.pool()).await.expect("conversation");
+        sqlx::query("UPDATE tasks SET updated_at_ms=? WHERE id=?")
+            .bind(now - 1000)
+            .bind(task_id)
+            .execute(host.repository.pool())
+            .await
+            .expect("age task");
+
+        host.auto_finalize_turn(task_id, turn_id, None, now)
+            .await
+            .expect("watchdog finish");
+        let status: (String, Option<i64>) = sqlx::query_as("SELECT status,completed_at_ms FROM chatgpt_bridge_requests WHERE id='watchdog-request'")
+            .fetch_one(host.repository.pool()).await.expect("request state");
+        let active: Option<String> = sqlx::query_scalar(
+            "SELECT active_request_id FROM chatgpt_conversations WHERE task_id=?",
+        )
+        .bind(task_id)
+        .fetch_one(host.repository.pool())
+        .await
+        .expect("conversation state");
+        assert_eq!(status.0, "completed");
+        assert!(status.1.is_some());
+        assert!(active.is_none());
+
+        sqlx::query("UPDATE chatgpt_bridge_requests SET status='running',completed_at_ms=NULL WHERE id='watchdog-request'")
+            .execute(host.repository.pool()).await.expect("simulate stale request");
+        sqlx::query(
+            "UPDATE chatgpt_conversations SET active_request_id='watchdog-request' WHERE task_id=?",
+        )
+        .bind(task_id)
+        .execute(host.repository.pool())
+        .await
+        .expect("simulate stale pointer");
+        host.reconcile_completed_bridge_requests()
+            .await
+            .expect("startup reconciliation");
+        host.reconcile_completed_bridge_requests()
+            .await
+            .expect("idempotent reconciliation");
+        let repaired: (String, Option<i64>) = sqlx::query_as("SELECT status,completed_at_ms FROM chatgpt_bridge_requests WHERE id='watchdog-request'")
+            .fetch_one(host.repository.pool()).await.expect("repaired request");
+        let active: Option<String> = sqlx::query_scalar(
+            "SELECT active_request_id FROM chatgpt_conversations WHERE task_id=?",
+        )
+        .bind(task_id)
+        .fetch_one(host.repository.pool())
+        .await
+        .expect("repaired pointer");
+        assert_eq!(repaired.0, "completed");
+        assert!(repaired.1.is_some());
+        assert!(active.is_none());
     }
 }

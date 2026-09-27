@@ -34,8 +34,8 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
+    collections::{BTreeMap, HashMap, HashSet},
+    sync::{Arc, Mutex},
 };
 use tower::ServiceExt;
 

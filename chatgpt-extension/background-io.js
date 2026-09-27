@@ -24,7 +24,7 @@ async function sendToChatGpt(tabId, payload, options = {}) {
     try {
       const health = await chrome.tabs.sendMessage(tabId, { type: 'chatcmd-content-alive', kind: 'chatgpt' });
       if (health?.ok && (health.captureProtocol !== 2 || health.renderProtocol !== 1 || !health.captureReady)) {
-        throw new Error('Tab ChatGPT đang dùng content script cũ hoặc thiếu bộ capture. Hãy reload extension 0.1.6 và tải lại tab ChatGPT.');
+        throw new Error(`Tab ChatGPT đang dùng content script cũ hoặc thiếu bộ capture. Hãy reload extension ${chrome.runtime.getManifest().version} và tải lại tab ChatGPT.`);
       }
     } catch (error) { if (!isMissingReceiverError(error)) throw error; }
   }
@@ -138,11 +138,23 @@ async function postJson(baseUrl, path, body) {
 }
 
 async function getJson(baseUrl, path) {
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: 'GET',
-    signal: AbortSignal.timeout(10_000),
-    headers: { 'X-ChatCmdClient': 'chatgpt-extension' },
-  });
+  let response;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      response = await fetch(`${baseUrl}${path}`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(10_000),
+        headers: { 'X-ChatCmdClient': 'chatgpt-extension' },
+      });
+    } catch (error) {
+      if (attempt) throw error;
+      await delay(250);
+      continue;
+    }
+    if (response.status !== 503 || attempt) break;
+    const retryAfter = Number(response.headers.get('retry-after')) * 1000;
+    await delay(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 2_000) : 250);
+  }
   if (!response.ok) {
     let message = `ChatCMD local API trả lỗi ${response.status}.`;
     try { message = (await response.json()).detail || message; } catch { /* non-json error */ }

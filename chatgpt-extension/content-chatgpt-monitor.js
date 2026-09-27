@@ -12,7 +12,8 @@ globalThis.ChatCmdMonitor = Object.freeze({ create(api) {
   let observedProgress = false;
   const startedAt = Date.now();
   const isSubagent = requestId.startsWith('subagent:');
-  let deadlineAt = startedAt + (isSubagent ? 30 : 10) * 60_000;
+  const ordinaryIdleTimeoutMs = 10 * 60_000;
+  let deadlineAt = startedAt + (isSubagent ? 30 * 60_000 : ordinaryIdleTimeoutMs);
   while (Date.now() < deadlineAt) {
     if (!api.activeRequest || api.activeRequest.id !== requestId || api.activeRequest.resultReported) return latestMessageText('assistant');
     const now = Date.now();
@@ -47,6 +48,7 @@ globalThis.ChatCmdMonitor = Object.freeze({ create(api) {
     if (stopButton) {
       observedProgress = true;
       lastActivityAt = now;
+      if (!isSubagent) deadlineAt = now + ordinaryIdleTimeoutMs;
     }
     const hasNewAssistantText = (recorder ? recorder.hasTurn : nodes.length > baselineCount) && Boolean(text);
     if (hasNewAssistantText) observedProgress = true;
@@ -59,6 +61,7 @@ globalThis.ChatCmdMonitor = Object.freeze({ create(api) {
         lastAnswerId = answerId;
         stableSince = now;
         lastActivityAt = now;
+        if (!isSubagent) deadlineAt = now + ordinaryIdleTimeoutMs;
       } else if (!stableSince) {
         stableSince = now;
       }

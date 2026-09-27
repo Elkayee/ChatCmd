@@ -186,15 +186,7 @@ fn extension_route_allowed(method: &Method, path: &str) -> bool {
     match (method, parts.as_slice()) {
         (&Method::GET | &Method::POST, ["tasks", _, "chatgpt", "compact"])
         | (&Method::GET, ["chatgpt", "compact", _])
-        | (
-            &Method::POST,
-            [
-                "chatgpt",
-                "compact",
-                _,
-                "checkpoint" | "resume",
-            ],
-        ) => true,
+        | (&Method::POST, ["chatgpt", "compact", _, "checkpoint" | "resume"]) => true,
         (&Method::GET, ["chatgpt", "capture", "capabilities"])
         | (&Method::POST, ["chatgpt", "capture", "turns"]) => true,
         (&Method::GET, ["chatgpt", "requests", _]) => true,

@@ -271,6 +271,8 @@ pub(super) struct ListInput {
     pub(super) offset: usize,
     #[serde(default = "default_limit")]
     pub(super) limit: usize,
+    #[serde(default = "default_timeout")]
+    pub(super) timeout_ms: u64,
 }
 
 #[derive(Deserialize)]

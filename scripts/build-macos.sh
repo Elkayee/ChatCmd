@@ -39,6 +39,7 @@ if [[ ! -f "$INSTALL_MARKER" || "$ROOT/web/package.json" -nt "$INSTALL_MARKER" |
 else
   printf 'Web dependencies unchanged; skipping npm ci.\n'
 fi
+npm test -- --run
 npm run build
 if find "$ROOT/web/dist" -type f -name '*.map' -print -quit | grep -q .; then
   echo "Source map files were generated in web/dist" >&2

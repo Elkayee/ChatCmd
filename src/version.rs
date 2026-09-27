@@ -6,6 +6,14 @@ pub(crate) fn compiled_version() -> &'static str {
     option_env!("CHATCMD_BUILD_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
+pub(crate) fn build_commit() -> &'static str {
+    option_env!("CHATCMD_BUILD_COMMIT").unwrap_or("unknown")
+}
+
+pub(crate) fn frontend_bundle_id() -> Option<&'static str> {
+    option_env!("CHATCMD_FRONTEND_BUNDLE_ID")
+}
+
 pub(crate) fn app_version() -> String {
     installed_version().unwrap_or_else(|| compiled_version().to_owned())
 }

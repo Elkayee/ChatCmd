@@ -1,5 +1,5 @@
 use std::{
-    path::{Component, Path},
+    path::{Component, Path, PathBuf},
     time::{Duration, Instant},
 };
 
@@ -12,7 +12,8 @@ mod shell_handoff;
 mod tool_authorization;
 
 use chatcmd_core::{
-    Artifact, ArtifactId, ArtifactStore, ExecutionMode, TaskExecutionMode, TaskId, TaskStore,
+    Artifact, ArtifactId, ArtifactStore, ExecutionMode, SettingsStore as _, TaskExecutionMode,
+    TaskId, TaskStore,
 };
 use chatcmd_mcp::RuntimeApi as _;
 use chatcmd_runtime::{
@@ -104,7 +105,10 @@ impl RuntimeHost {
             "shell_create" => {
                 let input: ShellCreate = parse(arguments)?;
                 self.retire_idle_current_turn_terminals(&context).await?;
-                let working_directory = match input.working_directory {
+                let working_directory = match input
+                    .working_directory
+                    .map(normalize_shell_working_directory)
+                {
                     Some(value) if value.is_absolute() => value,
                     Some(value) => project_folder
                         .as_ref()
@@ -113,6 +117,19 @@ impl RuntimeHost {
                     None => project_folder
                         .clone()
                         .ok_or_else(project_folder_required_for_shell)?,
+                };
+                let executable = match input.executable {
+                    Some(executable) => Some(executable),
+                    None => self
+                        .repository
+                        .setting("ui_terminalExecutable")
+                        .await
+                        .map_err(storage_error)?
+                        .and_then(|setting| {
+                            serde_json::from_str::<String>(&setting.value_json).ok()
+                        })
+                        .filter(|value| !value.trim().is_empty())
+                        .map(PathBuf::from),
                 };
                 let mut shell_scopes = task_path_scopes.clone();
                 if let Some(scope) = path_scopes::scope_for_path(&working_directory) {
@@ -128,7 +145,7 @@ impl RuntimeHost {
                         ShellCreateRequest {
                             request_id: context.request_id.clone(),
                             working_directory: Some(working_directory),
-                            executable: input.executable,
+                            executable,
                             arguments: input.arguments,
                             environment: input.environment,
                             columns: input.columns,
@@ -497,6 +514,27 @@ impl RuntimeHost {
             _ => Err(RuntimeError::new("tool_not_found", "unknown MCP tool")),
         }
     }
+}
+
+#[cfg(windows)]
+fn normalize_shell_working_directory(path: PathBuf) -> PathBuf {
+    let value = path.to_string_lossy();
+    let bytes = value.as_bytes();
+    if bytes.len() >= 2
+        && bytes[0] == b'/'
+        && bytes[1].is_ascii_alphabetic()
+        && (bytes.len() == 2 || bytes[2] == b'/')
+    {
+        let drive = char::from(bytes[1]).to_ascii_uppercase();
+        let suffix = value[2..].trim_start_matches('/').replace('/', "\\");
+        return PathBuf::from(format!("{drive}:\\{suffix}"));
+    }
+    path
+}
+
+#[cfg(not(windows))]
+fn normalize_shell_working_directory(path: PathBuf) -> PathBuf {
+    path
 }
 
 use helpers::*;

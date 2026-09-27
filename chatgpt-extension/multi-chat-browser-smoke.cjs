@@ -39,6 +39,7 @@ async function run() {
     const worker = await until(async () => (await chrome.call('Target.getTargets')).targetInfos
       .find((target) => target.type === 'service_worker' && target.url.startsWith(`chrome-extension://${extension.id}/`)), 'extension worker');
     const { sessionId: workerSession } = await chrome.call('Target.attachToTarget', { targetId: worker.targetId, flatten: true });
+    await until(() => chrome.evaluate(workerSession, 'typeof configureApprovalBridge === "function"'), 'extension service worker ready');
     await chrome.evaluate(workerSession, `configureApprovalBridge(${JSON.stringify(api.base)})`);
     const { targetId: foreground } = await chrome.call('Target.createTarget', { url: 'about:blank' });
     chrome.events.on('Runtime.exceptionThrown', (value) => failures.push(value.exceptionDetails.exception?.description || value.exceptionDetails.text));

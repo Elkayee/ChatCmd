@@ -11,11 +11,21 @@ impl RuntimeHost {
         match tool {
             "fs_list" => {
                 let input: ListInput = parse(arguments)?;
-                value(
-                    workspace
-                        .list(&input.path, input.offset, input.limit.clamp(1, 2_000))
-                        .await?,
-                )
+                let timeout_ms = input.timeout_ms.clamp(1, 120_000);
+                let result = tokio::select! {
+                    result = tokio::time::timeout(
+                        Duration::from_millis(timeout_ms),
+                        workspace.list(&input.path, input.offset, input.limit.clamp(1, 2_000)),
+                    ) => result.map_err(|_| RuntimeError::new(
+                        "filesystem_timeout",
+                        format!("fs_list exceeded its {timeout_ms} ms deadline"),
+                    ))??,
+                    () = context.cancellation.cancelled() => return Err(RuntimeError::new(
+                        "operationCancelled",
+                        "fs_list was cancelled",
+                    )),
+                };
+                value(result)
             }
             "fs_list_v2" => {
                 let started = Instant::now();

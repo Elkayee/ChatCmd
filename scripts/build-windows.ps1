@@ -46,6 +46,11 @@ try {
         Write-Host 'Web dependencies unchanged; skipping npm ci.'
     }
 
+    npm test -- --run
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Web tests failed'
+    }
+
     npm run build
     if ($LASTEXITCODE -ne 0) {
         throw 'Web build failed'
@@ -94,6 +99,8 @@ foreach ($entry in $targets) {
 
     Copy-Item $binary (Join-Path $output 'ChatCMD.exe')
     Copy-Item $extensionSource $extensionOutput -Recurse -Force
+    Copy-Item (Join-Path $root 'openai-tunnel.bat') $output
+    Copy-Item (Join-Path $root 'openai-tunnel') (Join-Path $output 'openai-tunnel') -Recurse -Force
 
     $zip = "$output.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }

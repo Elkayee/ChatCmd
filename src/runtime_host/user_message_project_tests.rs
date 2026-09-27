@@ -150,6 +150,136 @@ async fn relative_filesystem_path_uses_task_project_folder_outside_configured_ro
 }
 
 #[tokio::test]
+async fn legacy_list_relative_absolute_and_cancelled_calls_have_terminal_results() {
+    let (host, agent_id, directory) = test_host().await;
+    let project = directory.path().join("list-project");
+    std::fs::create_dir(&project).expect("create list project");
+    std::fs::write(project.join("listed.txt"), "listed").expect("write listed file");
+    let turn_id = "turn-fs-list-lifecycle";
+    let accepted = host
+        .call_persisted(
+            "agent_user_message",
+            turn_context(
+                "list-user-message",
+                &agent_id,
+                "agent_user_message",
+                turn_id,
+                "conversation-fs-list-lifecycle",
+            ),
+            json!({"content":format!("List `{}`", project.display())}),
+        )
+        .await
+        .expect("create task");
+    let task_id = accepted["taskId"].as_str().expect("task ID");
+    let session_id = accepted["sessionId"].as_str().expect("session ID");
+    sqlx::query("INSERT INTO task_execution_modes(task_id,mode,updated_at_ms) VALUES(?,'allow',0)")
+        .bind(task_id)
+        .execute(host.repository.pool())
+        .await
+        .expect("allow test task reads");
+
+    for (request_id, path) in [
+        ("list-relative", ".".to_owned()),
+        ("list-absolute", project.display().to_string()),
+    ] {
+        let mut context = OperationContext::new(request_id, &agent_id, "fs_list");
+        context.task_id = Some(task_id.to_owned());
+        context.turn_id = Some(turn_id.to_owned());
+        context.mcp_session_id = Some(session_id.to_owned());
+        let entries = host
+            .call_persisted("fs_list", context, json!({"path":path,"timeoutMs":1000}))
+            .await
+            .expect("list project");
+        assert_eq!(entries["result"][0]["name"], "listed.txt");
+    }
+
+    let mut cancelled = OperationContext::new("list-cancelled", &agent_id, "fs_list");
+    cancelled.task_id = Some(task_id.to_owned());
+    cancelled.turn_id = Some(turn_id.to_owned());
+    cancelled.mcp_session_id = Some(session_id.to_owned());
+    cancelled.cancellation.cancel();
+    let error = host
+        .call_persisted("fs_list", cancelled, json!({"path":"."}))
+        .await
+        .expect_err("cancelled list must terminate");
+    assert_eq!(error.code, "activity_stopped");
+
+    for request_id in ["list-relative", "list-absolute", "list-cancelled"] {
+        let (started, terminal): (i64, i64) = sqlx::query_as(
+            "SELECT SUM(kind='tool_call'),SUM(kind='tool_result') FROM timeline_events WHERE json_extract(payload_json,'$.activityId')=?",
+        )
+        .bind(request_id)
+        .fetch_one(host.repository.pool())
+        .await
+        .expect("read lifecycle events");
+        assert_eq!((started, terminal), (1, 1));
+    }
+}
+
+#[tokio::test]
+async fn gui_auth_remains_responsive_during_parallel_legacy_lists() {
+    let (host, agent_id, directory) = test_host().await;
+    let project = directory.path().join("parallel-list-project");
+    std::fs::create_dir(&project).expect("create project");
+    for index in 0..100 {
+        std::fs::write(project.join(format!("item-{index}.txt")), "listed")
+            .expect("write listed file");
+    }
+    let accepted = host
+        .call_persisted(
+            "agent_user_message",
+            turn_context(
+                "parallel-list-user",
+                &agent_id,
+                "agent_user_message",
+                "parallel-list-turn",
+                "parallel-list-scope",
+            ),
+            json!({"content":format!("List `{}`", project.display())}),
+        )
+        .await
+        .expect("create task");
+    let task_id = accepted["taskId"].as_str().expect("task ID").to_owned();
+    let turn_id = accepted["turnId"].as_str().expect("turn ID").to_owned();
+    let session_id = accepted["sessionId"]
+        .as_str()
+        .expect("session ID")
+        .to_owned();
+    sqlx::query("INSERT INTO task_execution_modes(task_id,mode,updated_at_ms) VALUES(?,'allow',0)")
+        .bind(&task_id)
+        .execute(host.repository.pool())
+        .await
+        .expect("allow test task reads");
+
+    let host = std::sync::Arc::new(host);
+    let mut calls = Vec::new();
+    for index in 0..8 {
+        let host = host.clone();
+        let agent_id = agent_id.clone();
+        let task_id = task_id.clone();
+        let turn_id = turn_id.clone();
+        let session_id = session_id.clone();
+        calls.push(tokio::spawn(async move {
+            let mut context =
+                OperationContext::new(format!("parallel-list-{index}"), agent_id, "fs_list");
+            context.task_id = Some(task_id);
+            context.turn_id = Some(turn_id);
+            context.mcp_session_id = Some(session_id);
+            host.call_persisted("fs_list", context, json!({"path":".","timeoutMs":1000}))
+                .await
+        }));
+    }
+    let auth = crate::gui_auth::GuiAuth::new(host.repository.clone());
+    tokio::time::timeout(std::time::Duration::from_secs(1), auth.has_password())
+        .await
+        .expect("GUI auth must remain responsive")
+        .expect("read GUI auth state");
+    for call in calls {
+        call.await.expect("join list call").expect("list project");
+    }
+}
+
+#[tokio::test]
 async fn delegated_child_inherits_project_folder_and_keeps_internal_user_message_sync() {
     let (host, agent_id, directory) = test_host().await;
     sqlx::query(

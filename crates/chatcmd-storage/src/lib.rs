@@ -6,6 +6,7 @@ pub mod compact;
 mod device_identity;
 mod importer;
 mod path;
+mod pool;
 mod repository;
 pub mod subagent_approval;
 pub mod subagent_report;
@@ -14,6 +15,7 @@ mod writer;
 
 pub use importer::LegacyImporter;
 pub use path::{DataPathError, resolve_database_path};
+pub use pool::{PoolAcquireError, acquire_with_diagnostics};
 pub use repository::{
     CURRENT_SCHEMA_VERSION, MAX_TERMINAL_CHUNK_BYTES, PersistedWorkspaceIndex,
     PersistedWorkspaceIndexEntry, SqliteRepository,

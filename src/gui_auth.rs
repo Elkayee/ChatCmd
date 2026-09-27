@@ -29,6 +29,7 @@ pub(crate) struct GuiAuth {
     repository: SqliteRepository,
     sessions: Arc<RwLock<HashMap<String, SessionEntry>>>,
     password_write: Arc<Mutex<()>>,
+    cached_hash: Arc<RwLock<Option<Option<String>>>>,
 }
 
 impl GuiAuth {
@@ -37,6 +38,7 @@ impl GuiAuth {
             repository,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             password_write: Arc::new(Mutex::new(())),
+            cached_hash: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -127,15 +129,33 @@ impl GuiAuth {
     }
 
     async fn password_hash(&self) -> Result<Option<String>> {
+        {
+            let cache = self.cached_hash.read().await;
+            if let Some(cached) = &*cache {
+                return Ok(cached.clone());
+            }
+        }
+        let mut connection = chatcmd_storage::acquire_with_diagnostics(
+            self.repository.pool(),
+            "gui_auth.password_hash",
+            Duration::from_secs(5),
+        )
+        .await?;
         let value: Option<String> =
             sqlx::query_scalar("SELECT value_json FROM settings WHERE key=?")
                 .bind(PASSWORD_SETTING_KEY)
-                .fetch_optional(self.repository.pool())
+                .fetch_optional(&mut *connection)
                 .await
                 .context("load GUI password hash")?;
-        value
+        drop(connection);
+        let decoded = value
             .map(|json| serde_json::from_str::<String>(&json).context("decode GUI password hash"))
-            .transpose()
+            .transpose()?;
+        {
+            let mut cache = self.cached_hash.write().await;
+            *cache = Some(decoded.clone());
+        }
+        Ok(decoded)
     }
 
     async fn store_password_hash(&self, hash: &str) -> Result<()> {
@@ -148,6 +168,10 @@ impl GuiAuth {
             .execute(self.repository.pool())
             .await
             .context("store GUI password hash")?;
+        {
+            let mut cache = self.cached_hash.write().await;
+            *cache = Some(Some(hash.to_owned()));
+        }
         Ok(())
     }
 }
@@ -225,5 +249,26 @@ mod tests {
     fn rejects_short_passwords() {
         assert!(validate_new_password("1234567").is_err());
         assert!(validate_new_password("12345678").is_ok());
+    }
+
+    #[tokio::test]
+    async fn cached_password_hash_survives_exhausted_pool() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let (repository, _) = SqliteRepository::open(&directory.path().join("chatcmd.db"), 1)
+            .await
+            .expect("open repository");
+        let auth = GuiAuth::new(repository.clone());
+
+        // Initial check populates cache
+        assert!(!auth.has_password().await.expect("initial has_password"));
+
+        // Now completely hold the only connection in the pool
+        let held = repository.pool().acquire().await.expect("hold connection");
+
+        // has_password must succeed immediately from in-memory cache without needing a connection
+        let result = tokio::time::timeout(Duration::from_millis(50), auth.has_password()).await;
+        assert_eq!(result.expect("timeout").expect("has_password"), false);
+
+        drop(held);
     }
 }

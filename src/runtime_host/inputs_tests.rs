@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use super::{
-        GitCommit, GitCwdInput, GitDiff, ReadInput, ReplaceTextInput, ShellCreate, ShellRead,
-        ShellSignalInput, ShellWrite,
+        GitCommit, GitCwdInput, GitDiff, ListInput, ReadInput, ReplaceTextInput, ShellCreate,
+        ShellRead, ShellSignalInput, ShellWrite,
     };
     use crate::runtime_host::plan_prompt::PlanQuestionKind;
 
@@ -58,6 +58,13 @@ mod tests {
             input.working_directory.as_deref(),
             Some(std::path::Path::new("."))
         );
+    }
+
+    #[test]
+    fn legacy_list_has_a_finite_bounded_default() {
+        let input: ListInput =
+            serde_json::from_value(serde_json::json!({"path":"."})).expect("legacy list input");
+        assert_eq!(input.timeout_ms, 30_000);
     }
 
     #[test]

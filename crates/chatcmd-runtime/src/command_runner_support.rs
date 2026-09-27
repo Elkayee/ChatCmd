@@ -212,11 +212,11 @@ fn invalid(message: &str) -> RuntimeError {
 }
 
 const fn default_stdout_bytes() -> usize {
-    512 * 1024
+    16 * 1024
 }
 
 const fn default_stderr_bytes() -> usize {
-    128 * 1024
+    8 * 1024
 }
 
 const fn default_artifact_bytes() -> u64 {

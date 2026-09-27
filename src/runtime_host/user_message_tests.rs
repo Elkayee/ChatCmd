@@ -38,18 +38,22 @@ pub(crate) async fn test_host() -> (RuntimeHost, String, TempDir) {
         })
         .await
         .expect("create agent");
-    let fs_read_text_tool_id = repository
+    sqlx::query("INSERT INTO tools(id,key,group_id,title,description,input_schema_json,capabilities_json,enabled) VALUES('tool-fs-list-test','fs_list','group-workspace','List files','List files','{}','[\"read\"]',1)")
+        .execute(repository.pool())
+        .await
+        .expect("seed fs_list tool");
+    let allowed_tool_ids = repository
         .list_tools()
         .await
         .expect("list tools")
         .into_iter()
-        .find(|tool| tool.key == "fs_read_text")
-        .expect("fs_read_text tool")
-        .id;
+        .filter(|tool| matches!(tool.key.as_str(), "fs_read_text" | "fs_list"))
+        .map(|tool| tool.id)
+        .collect::<Vec<_>>();
     repository
-        .set_agent_allowed_tools(&created.agent.id, &[fs_read_text_tool_id])
+        .set_agent_allowed_tools(&created.agent.id, &allowed_tool_ids)
         .await
-        .expect("allow fs_read_text");
+        .expect("allow filesystem read tools");
     let root = directory
         .path()
         .canonicalize()

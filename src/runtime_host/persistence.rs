@@ -493,6 +493,30 @@ impl RuntimeHost {
         Ok(reconciled)
     }
 
+    pub(crate) async fn reconcile_orphaned_tool_calls_after_restart(&self) -> RuntimeResult<usize> {
+        let rows = sqlx::query(
+            "SELECT DISTINCT start.task_id,start.turn_id FROM timeline_events start WHERE start.turn_id IS NOT NULL AND start.kind='tool_call' AND COALESCE(json_extract(start.payload_json,'$.activityId'),'')<>'' AND COALESCE(json_extract(start.payload_json,'$.status'),'') IN ('started','pending_approval','stop_requested') AND COALESCE(json_extract(start.payload_json,'$.tool'),'') NOT IN ('agent_user_message','agent_progress','agent_subagent_start','agent_subagent_wait','agent_turn_complete') AND NOT EXISTS (SELECT 1 FROM timeline_events terminal WHERE terminal.task_id=start.task_id AND terminal.turn_id=start.turn_id AND terminal.kind='tool_result' AND json_extract(terminal.payload_json,'$.activityId')=json_extract(start.payload_json,'$.activityId'))",
+        )
+        .fetch_all(self.repository.pool())
+        .await
+        .map_err(|_| RuntimeError::new("storage_error", "restart activity lookup failed"))?;
+        let now = now_ms();
+        let mut reconciled = 0_usize;
+        for row in rows {
+            reconciled = reconciled.saturating_add(
+                self.reconcile_orphaned_tool_calls(
+                    &row.get::<String, _>("task_id"),
+                    &row.get::<String, _>("turn_id"),
+                    None,
+                    "host_restart",
+                    now,
+                )
+                .await?,
+            );
+        }
+        Ok(reconciled)
+    }
+
     pub(super) async fn save_agent_event(
         &self,
         context: &OperationContext,

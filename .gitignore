@@ -6,3 +6,7 @@ web/dist/
 web/*.tsbuildinfo
 /release/
 /logs/*.log
+/openai-tunnel/.env
+/openai-tunnel/bin/
+/openai-tunnel/logs/
+/openai-tunnel/profiles/

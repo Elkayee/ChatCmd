@@ -174,7 +174,7 @@ For component boundaries, data flow, and security assumptions, read [docs/ARCHIT
 - [Rust](https://www.rust-lang.org/tools/install) **1.85 or newer** with Cargo.
 - [Node.js](https://nodejs.org/) **20.19 or newer**, or **22.12 or newer**, and npm (matching the checked-in Vite engine requirement).
 - [Git](https://git-scm.com/).
-- A supported local shell: PowerShell or `cmd.exe` on Windows; `bash` or `zsh` on macOS/Linux.
+- A supported local shell: PowerShell, `cmd.exe`, or Git Bash on Windows; `bash` or `zsh` on macOS/Linux.
 - Platform build tools:
   - Windows: Visual Studio Build Tools with the MSVC C++ workload.
   - macOS: Xcode Command Line Tools.

@@ -79,6 +79,22 @@ async fn metadata_version(workspace: &chatcmd_runtime::WorkspaceService, path: &
         .version_token
 }
 
+async fn content_version(workspace: &chatcmd_runtime::WorkspaceService, path: &Path) -> String {
+    workspace
+        .stat_v2(
+            None,
+            &FsStatRequest {
+                path: path.to_path_buf(),
+                version_strength: VersionStrength::Content,
+                hash_algorithm: Some("sha256".to_owned()),
+                budget: FsStatBudget::default(),
+            },
+        )
+        .await
+        .expect("hash fixture")
+        .version_token
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn peak_rss_bytes() -> u64 {
     let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
@@ -341,7 +357,7 @@ async fn simultaneous_expected_version_writers_have_one_commit_winner() {
     let path = directory.path().join("race.txt");
     std::fs::write(&path, "baseline").expect("seed race target");
     let workspace = Arc::new(workspace(directory.path()));
-    let expected_version = metadata_version(&workspace, &path).await;
+    let expected_version = content_version(&workspace, &path).await;
     let barrier = Arc::new(Barrier::new(3));
     let mut tasks = Vec::new();
 

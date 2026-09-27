@@ -19,6 +19,7 @@ const backgroundTabsSource = readFileSync(join(extensionRoot, 'background-tabs.j
 const uiHelperSource = readFileSync(join(extensionRoot, 'content-chatgpt-ui.js'), 'utf8');
 const manifest = JSON.parse(readFileSync(join(extensionRoot, 'manifest.json'), 'utf8'));
 const localUiSource = readFileSync(join(extensionRoot, '..', 'web', 'src', 'chatgpt', 'ChatGptConversation.tsx'), 'utf8');
+const localUpdateScript = readFileSync(join(extensionRoot, '..', 'scripts', 'build_va_cap_nhat.ps1'), 'utf8');
 
 function loadBridge(statusHandler = () => Promise.resolve({ ok: true, known: true, running: true, active: true })) {
   const attributes = new Map();
@@ -108,6 +109,10 @@ test('ready status is still blocked while ChatGPT exposes a stop button', () => 
   assert.equal(response.generating, true);
 });
 
+test('local release update copies the ChatGPT extension beside the executable', () => {
+  assert.match(localUpdateScript, /Copy-Item[^\r\n]+chatgpt-extension[^\r\n]+-Recurse[^\r\n]+-Force/i);
+});
+
 test('a stale request slot does not block a new run once the composer is idle', async () => {
   const context = loadBridge();
   vm.runInContext(`
@@ -170,6 +175,45 @@ test('unknown backend state never authorizes an automatic resend', async () => {
   prepareMonitor(context, { known: false, running: null, stopRequested: false, hasFinalResponse: false, active: null }, { text: '', sendReady: false });
   await assert.rejects(vm.runInContext("waitForAssistant(0, 'request-1', 'DO NOT RETRY')", context), /Quá lâu/);
   assert.equal(context.__submitCalls, 0);
+});
+
+test('read-only bridge status retries one transient disconnect without resending a POST', async () => {
+  let calls = 0;
+  const context = {
+    AbortSignal,
+    setTimeout: (callback) => callback(),
+    fetch: async (_url, options) => {
+      calls += 1;
+      assert.equal(options.method, 'GET');
+      if (calls === 1) throw new Error('connection reset');
+      return { ok: true, json: async () => ({ status: 'running' }) };
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(backgroundIoSource, context);
+  const result = await vm.runInContext("getJson('http://127.0.0.1:8080', '/api/local/chatgpt/requests/test')", context);
+  assert.equal(result.status, 'running');
+  assert.equal(calls, 2);
+
+  calls = 0;
+  context.fetch = async (_url, options) => {
+    calls += 1;
+    assert.equal(options.method, 'GET');
+    if (calls === 1) return { ok: false, status: 503, headers: { get: () => '2' } };
+    return { ok: true, json: async () => ({ status: 'completed' }) };
+  };
+  const recovered = await vm.runInContext("getJson('http://127.0.0.1:8080', '/api/local/chatgpt/requests/test')", context);
+  assert.equal(recovered.status, 'completed');
+  assert.equal(calls, 2);
+
+  calls = 0;
+  context.fetch = async (_url, options) => {
+    calls += 1;
+    assert.equal(options.method, 'POST');
+    return { ok: false, status: 503, json: async () => ({ detail: 'temporarily unavailable' }) };
+  };
+  await assert.rejects(vm.runInContext("postJson('http://127.0.0.1:8080', '/api/local/action', {})", context), /temporarily unavailable/);
+  assert.equal(calls, 1);
 });
 
 test('raw assistant bubble completes even when the empty composer has no send button', async () => {
@@ -278,6 +322,31 @@ test('send control accepts an unnamed submit button in the composer form', () =>
   vm.createContext(context);
   vm.runInContext(domSource, context, { filename: 'content-chatgpt-dom.js' });
   assert.equal(vm.runInContext('ChatCmdConversationDom.findSendButton(composer) === submit', context), true);
+});
+
+test('send control accepts current ChatGPT selector variants', () => {
+  class FakeElement {
+    constructor() { this.parentElement = null; }
+    getBoundingClientRect() { return { width: 10, height: 10 }; }
+  }
+  for (const selector of ['button#composer-submit-button', 'button[aria-label="Gửi lời nhắc"]']) {
+    const send = new FakeElement();
+    const form = new FakeElement();
+    form.querySelectorAll = (candidate) => candidate === selector ? [send] : [];
+    const composer = new FakeElement();
+    composer.parentElement = form;
+    composer.closest = (candidate) => candidate === 'form' ? form : null;
+    const context = {
+      Element: FakeElement,
+      getComputedStyle: () => ({ visibility: 'visible', display: 'block' }),
+      document: { querySelectorAll: () => [] },
+      composer,
+      send,
+    };
+    vm.createContext(context);
+    vm.runInContext(domSource, context, { filename: 'content-chatgpt-dom.js' });
+    assert.equal(vm.runInContext('ChatCmdConversationDom.findSendButton(composer) === send', context), true);
+  }
 });
 
 test('a stop-like button outside the unified composer does not mark ChatGPT as generating', () => {

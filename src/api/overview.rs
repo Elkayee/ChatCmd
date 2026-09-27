@@ -1,12 +1,13 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use axum::{Json, extract::State};
+use chatcmd_core::SettingsStore as _;
 use serde_json::{Value, json};
 use sqlx::Row;
 
 use crate::websocket::AppState;
 
-use super::{Problem, db_problem, now_ms, settings::mcp_endpoint_template};
+use super::{Problem, db_problem, now_ms, settings::mcp_endpoint_template, storage_problem};
 
 const SUBAGENT_METRICS_SQL: &str = "SELECT COALESCE(SUM(CASE WHEN status='running' THEN 1 ELSE 0 END),0) AS active_leases,COALESCE(SUM(CASE WHEN status='timedOut' THEN 1 ELSE 0 END),0) AS expired_total,COALESCE(MAX(CASE WHEN status='running' THEN MAX(0,?-COALESCE(last_heartbeat_at_ms,lease_acquired_at_ms,updated_at_ms)) ELSE 0 END),0) AS max_heartbeat_lag_ms,CAST(COALESCE(AVG(CASE WHEN completed_at_ms IS NOT NULL AND started_at_ms IS NOT NULL THEN MAX(0,completed_at_ms-started_at_ms) END),0) AS REAL) AS average_runtime_ms,COALESCE(SUM(CASE WHEN attempt>1 THEN attempt-1 ELSE 0 END),0)+COALESCE(SUM(CASE WHEN fallback_attempts>1 THEN fallback_attempts-1 ELSE 0 END),0) AS retry_attempts FROM subagent_runs";
 
@@ -17,6 +18,12 @@ pub(super) async fn health() -> Json<Value> {
 pub(super) async fn info(State(state): State<Arc<AppState>>) -> Json<Value> {
     Json(json!({
         "name": "ChatCmdClient", "version": crate::version::app_version(),
+        "build": {
+            "compiledVersion": crate::version::compiled_version(),
+            "commit": crate::version::build_commit(),
+            "frontendBundle": crate::version::frontend_bundle_id(),
+            "embeddedWeb": cfg!(feature = "embedded-web")
+        },
         "api": "/api", "mcp": "/mcp/{token}", "websocket": "/ws",
         "connectedClients": state.connected_clients()
     }))
@@ -60,12 +67,20 @@ pub(super) async fn overview(State(state): State<Arc<AppState>>) -> Result<Json<
         .map_err(db_problem)?;
     let tasks = counts(&task_counts);
     let terminal = counts(&session_counts);
+    let default_shell = state
+        .repository
+        .setting("ui_terminalExecutable")
+        .await
+        .map_err(storage_problem)?
+        .and_then(|setting| serde_json::from_str::<String>(&setting.value_json).ok())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(default_shell);
     Ok(Json(json!({
         "app": { "version": crate::version::app_version(), "startedAtUtc": state.started_at, "state": "ready" },
         "device": { "id": state.device.id.as_str(), "machineId": state.device.machine_id, "name": state.device.name, "platform": state.device.platform, "osVersion": state.device.os_version, "architecture": state.device.architecture },
         "mcp": { "state": "listening", "endpoint": mcp_endpoint_template(&state), "connectedClients": state.connected_clients() },
         "database": { "state": "ready", "path": state.database_path, "schemaVersion": chatcmd_storage::CURRENT_SCHEMA_VERSION.to_string() },
-        "terminal": { "defaultShell": default_shell(), "activeSessions": count_active(&terminal), "totalSessions": total(&terminal), "failedSessions": *terminal.get("failed").unwrap_or(&0) },
+        "terminal": { "defaultShell": default_shell, "activeSessions": count_active(&terminal), "totalSessions": total(&terminal), "failedSessions": *terminal.get("failed").unwrap_or(&0) },
         "tasks": { "running": *tasks.get("running").unwrap_or(&0), "completed": *tasks.get("completed").unwrap_or(&0), "failed": *tasks.get("failed").unwrap_or(&0), "approvals": approval_count },
         "subagents": { "activeLeases": active_leases, "expiredTotal": expired_total, "maxHeartbeatLagMs": max_heartbeat_lag_ms, "averageRuntimeMs": average_runtime_ms, "retryAttempts": retry_attempts },
         "sessions": { "active": count_active(&terminal), "total": total(&terminal) }, "recentEvents": []

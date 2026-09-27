@@ -22,12 +22,9 @@ printf "${CYAN}================================================================$
 printf "${CYAN}     CHATCMD - BIEN DICH VA CAP NHAT RELEASE (BASH)             ${RESET}\n"
 printf "${CYAN}================================================================${RESET}\n"
 
-# 3. Kiem tra frontend web/dist
+# 3. Kiem thu va build frontend de embedded-web khong bao gio dung bundle cu
 TEP_WEB="$TM_GOC/web/dist/index.html"
-if [ ! -f "$TEP_WEB" ]; then
-    printf "${VANG}[*] Web dist chua co san. Dang build frontend web...${RESET}\n"
-    (cd "$TM_GOC/web" && npm run build)
-fi
+(cd "$TM_GOC/web" && npm test -- --run && npm run build)
 printf "${XANH}[PASS] 1. Frontend web/dist san sang.${RESET}\n"
 
 # 4. Bien dich Rust Release binary voi embedded-web
@@ -54,6 +51,9 @@ printf "${XANH}[PASS] 3. Da giai phong tien trinh.${RESET}\n"
 
 # 6. Sao chep binary sang thu muc thuc thi
 cp -f "$TEP_NGUON" "$TEP_DICH"
+cp -f "$TM_GOC/openai-tunnel.bat" "$(dirname "$TEP_DICH")/openai-tunnel.bat"
+mkdir -p "$(dirname "$TEP_DICH")/openai-tunnel"
+cp -R "$TM_GOC/openai-tunnel/." "$(dirname "$TEP_DICH")/openai-tunnel/"
 printf "${XANH}[PASS] 4. Da cap nhat thanh cong sang %s${RESET}\n" "$TEP_DICH"
 
 printf "\n${CYAN}================================================================${RESET}\n"

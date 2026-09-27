@@ -32,7 +32,7 @@ try {
         CurrentDirectory = $tm_chay
     }
 } catch {
-    Start-Process -FilePath $tep_exe -WorkingDirectory $tm_chay
+    Start-Process -FilePath $tep_exe -WorkingDirectory $tm_chay -WindowStyle Hidden
 }
 
 # 3. Cho va xac nhan tien trinh khoi tao
@@ -68,12 +68,19 @@ for ($i = 0; $i -lt 10; $i++) {
 }
 
 if ($cong_mo) {
-    Write-Host "[PASS] 2. Cong dich vu 8080 da san sang lang nghe." -ForegroundColor Green
+    try {
+        $phan_hoi = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8080/api/info' -TimeoutSec 5
+        if ($phan_hoi.StatusCode -ne 200) { throw "HTTP $($phan_hoi.StatusCode)" }
+    } catch {
+        Write-Host "[FAIL] /api/info khong san sang: $_" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "[PASS] 2. /api/info tra HTTP 200." -ForegroundColor Green
     Write-Host "`n================================================================" -ForegroundColor Cyan
     Write-Host ">>> KET LUAN: CHATCMD SERVICE [PASS] (DANG CHAY ON DINH) <<<" -ForegroundColor Green
     Write-Host "================================================================" -ForegroundColor Cyan
     exit 0
 } else {
-    Write-Host "[CANH BAO] Cong 8080 chua phan hoi trong 5 giay (tien trinh PID $pid_moi van dang chay)." -ForegroundColor Yellow
-    exit 0
+    Write-Host "[FAIL] Cong 8080 chua phan hoi trong 5 giay (tien trinh PID $pid_moi van dang chay)." -ForegroundColor Red
+    exit 1
 }

@@ -7,12 +7,49 @@ fn into_tool_arguments<T: Serialize>(arguments: T) -> ToolArguments {
 #[derive(Clone)]
 pub struct McpServer {
     runtime: Arc<dyn RuntimeApi>,
+    active_requests: Arc<Mutex<HashSet<String>>>,
+}
+
+struct RequestGuard {
+    active_requests: Arc<Mutex<HashSet<String>>>,
+    key: String,
+}
+
+impl Drop for RequestGuard {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.active_requests.lock() {
+            active.remove(&self.key);
+        }
+    }
+}
+
+impl RequestGuard {
+    fn track(active_requests: &Arc<Mutex<HashSet<String>>>, key: String) -> Option<Self> {
+        let mut active = active_requests.lock().ok()?;
+        active.insert(key.clone()).then(|| Self {
+            active_requests: active_requests.clone(),
+            key,
+        })
+    }
 }
 
 impl McpServer {
     #[must_use]
     pub fn new(runtime: Arc<dyn RuntimeApi>) -> Self {
-        Self { runtime }
+        Self {
+            runtime,
+            active_requests: Arc::new(Mutex::new(HashSet::new())),
+        }
+    }
+
+    fn track_request(&self, context: &OperationContext) -> Option<RequestGuard> {
+        let key = format!(
+            "{}\0{}\0{}",
+            context.agent_id,
+            context.mcp_session_id.as_deref().unwrap_or_default(),
+            context.request_id
+        );
+        RequestGuard::track(&self.active_requests, key)
     }
 
     fn prepare_call(
@@ -52,6 +89,12 @@ impl McpServer {
             return missing_authenticated_context();
         };
         let (context, value) = self.prepare_call(tool_name, arguments, authenticated);
+        let Some(_request_guard) = self.track_request(&context) else {
+            return CallToolResult::structured_error(error_value(&RuntimeError::new(
+                "duplicate_request",
+                "an activity with this request ID is already running",
+            )));
+        };
         match self.runtime.call(tool_name, context, value).await {
             Ok(value) => CallToolResult::structured(value),
             Err(error) => CallToolResult::structured_error(error_value(&error)),
@@ -176,4 +219,18 @@ fn catalog_mismatch(arguments: &ToolArguments) -> Option<CallToolResult> {
             "steps": ["discardCachedSchemas", "reconnect", "initialize", "listTools", "retryCall"]
         }
     })))
+}
+
+#[cfg(test)]
+mod request_tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_request_is_rejected_until_the_first_finishes() {
+        let active = Arc::new(Mutex::new(HashSet::new()));
+        let first = RequestGuard::track(&active, "same".to_owned()).expect("first request");
+        assert!(RequestGuard::track(&active, "same".to_owned()).is_none());
+        drop(first);
+        assert!(RequestGuard::track(&active, "same".to_owned()).is_some());
+    }
 }

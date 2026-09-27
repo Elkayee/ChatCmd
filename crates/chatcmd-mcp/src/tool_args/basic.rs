@@ -300,5 +300,8 @@ tool_args!(ListArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     offset: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    limit: Option<usize>
+    limit: Option<usize>,
+    /// Finite compatibility deadline; prefer fs_list_v2 for large directories.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timeout_ms: Option<u64>
 });
