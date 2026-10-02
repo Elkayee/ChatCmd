@@ -85,7 +85,7 @@ async function workerFixture(t, shared = world()) {
         shared.calls.push({ tabId, ...clone(message) });
         shared.effects.push({ type: 'message', tabId, message: clone(message) });
         if (message.type === 'chatcmd-content-alive') return shared.contentHealth || {
-          ok: true, kind: 'chatgpt', compactProtocol: 3, captureProtocol: 2,
+          ok: true, kind: 'chatgpt', compactProtocol: 4, captureProtocol: 2,
           clockProtocol: 1, renderProtocol: 1, captureReady: true,
         };
         return shared.route(tabId, clone(message));
@@ -134,7 +134,14 @@ async function workerFixture(t, shared = world()) {
     chrome, fetch, URL, AbortSignal, console, Error,
     approvalBaseUrl: 'http://127.0.0.1:8080',
     REQUEST_PREFIX: 'chatcmd-request:', LOG_KEY: 'compact-test-log', MAX_LOGS: 20,
-    setTimeout: (fn) => { timers.set(++timerId, fn); return timerId; },
+    setTimeout: (fn, ms) => {
+      const id = ++timerId;
+      timers.set(id, fn);
+      if (typeof fn === 'function' && ms !== 400) {
+        setImmediate(() => { if (timers.has(id)) { timers.delete(id); fn(); } });
+      }
+      return id;
+    },
     clearTimeout: (id) => timers.delete(id),
     bindConversationTab: async (...args) => shared.effects.push({ type: 'bind', args: clone(args) }),
     bindReturnSource: async (...args) => shared.effects.push({ type: 'return', args: clone(args) }),

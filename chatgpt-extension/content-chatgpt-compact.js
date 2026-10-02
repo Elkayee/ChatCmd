@@ -52,8 +52,8 @@
   }
   function markedUser(job, kind) {
     const prefix = protocol.marker(kind, job.id);
-    const roots = [...document.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]')]
-      .filter((node) => !node.parentElement?.closest('[data-message-author-role="user"], [data-turn="user"]'));
+    const roots = [...document.querySelectorAll('[data-message-author-role="user"], [data-turn="user"], [data-chatgpt-search-unit-key$=":user"]')]
+      .filter((node) => !node.parentElement?.closest('[data-message-author-role="user"], [data-turn="user"], [data-chatgpt-search-unit-key$=":user"]'));
     const read = (node) => transcript.userText(node);
     const matches = roots.filter((node) => protocol.canonical(read(node)).startsWith(prefix));
     if (matches.length !== 1) return { duplicate: matches.length > 1, user: null };
@@ -63,7 +63,10 @@
     // The unique exact operation prompt already proves ownership; the id is only an
     // opaque same-document token used by read/close recovery, so synthesize one when
     // the public DOM omits a native message id instead of leaving compact stuck forever.
-    const nativeId = node.getAttribute('data-message-id') || node.querySelector('[data-message-id]')?.getAttribute('data-message-id');
+    const nativeId = node.getAttribute('data-message-id')
+      || node.querySelector('[data-message-id]')?.getAttribute('data-message-id')
+      || node.getAttribute('data-chatgpt-search-message-ids')?.split(/\s+/)[0]
+      || node.querySelector('[data-chatgpt-search-message-ids]')?.getAttribute('data-chatgpt-search-message-ids')?.split(/\s+/)[0];
     const index = roots.indexOf(node);
     const id = nativeId || `dom-compact:${job.id}:${index}`;
     return { duplicate: false, user: { node, id }, last: roots.at(-1) === node };
@@ -221,7 +224,7 @@
     window.removeEventListener('pageshow', wake); window.removeEventListener('popstate', wake);
   }
   globalThis.ChatCmdCompact = Object.freeze({
-    version: 3,
+    version: 4,
     get busy() { return Boolean(currentJob && !protocol.terminal(currentJob) && ownedConversationId === transcript.conversationId()); },
     dispose, probe,
   });

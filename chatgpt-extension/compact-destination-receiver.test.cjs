@@ -19,7 +19,7 @@ for (const continueAfterCompact of [false, true]) {
       assert.equal(tabId, 9);
       injections += 1;
       alive = true;
-      env.shared.contentHealth = { ok: true, kind: 'chatgpt', compactProtocol: 3,
+      env.shared.contentHealth = { ok: true, kind: 'chatgpt', compactProtocol: 4,
         captureProtocol: 2, clockProtocol: 1, renderProtocol: 1, captureReady: true };
     };
     const probe = receiver({ markerFound: true, generating: false,
